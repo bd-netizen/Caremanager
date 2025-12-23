@@ -3,649 +3,481 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>長照困境診斷雷達</title>
+    <title>長照困境診斷雷達 - 互動式四象限分析</title>
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- React & Babel CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://unpkg.com/lucide-react@latest/dist/lucide-react.min.js"></script>
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white !important; }
+        }
+        /* 報告橫線背景 */
+        .ruled-paper {
+            background-image: linear-gradient(transparent 23px, #e5e7eb 24px);
+            background-size: 100% 24px;
+            line-height: 24px;
+        }
+    </style>
 </head>
-<body class="bg-gray-50">
+<body class="bg-gray-50 text-gray-900">
     <div id="root"></div>
 
     <script type="text/babel">
-        // 1. 設定環境變數
-        const { useState, useRef } = React;
-        const { 
-            Info, CheckCircle, ArrowRight, RotateCcw, Filter, Settings, Link: LinkIcon, 
-            Search, FileText, ExternalLink, Cloud, Edit3, Printer, FileOutput, ChevronLeft 
-        } = LucideReact;
+        // 從全域 window 中取得元件
+        const { useState, useMemo, useEffect, useRef } = React;
 
-        // 2. 你的資料集 (直接貼上你的 INITIAL_DATA)
+        // 模擬 Lucide React 元件 (因為 CDN 版使用方式略有不同，這裡建立簡單封裝)
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const iconRef = useRef(null);
+            useEffect(() => {
+                if (iconRef.current) {
+                    const iconNode = lucide.icons[name];
+                    if (iconNode) {
+                        const svg = lucide.createIcons({
+                            icons: { [name]: iconNode },
+                            attrs: { width: size, height: size, class: className }
+                        });
+                    }
+                }
+            }, [name, size, className]);
+            return <i data-lucide={name} ref={iconRef} className={className}></i>;
+        };
+
+        // --- 核心資料 ---
         const INITIAL_DATA = [
-          { id: 'A01', label: '找不外看', desc: '找不到外籍看護', x: 85, y: 95, cat: 'A' },
-          { id: 'A02', label: '外看逃離', desc: '外籍看護逃跑或期滿離境', x: 95, y: 98, cat: 'A' },
-          { id: 'A03', label: '申請外看', desc: '不知道如何申請外籍看護', x: 40, y: 45, cat: 'A' },
-          { id: 'A04', label: '本看太貴', desc: '本國看護費用太高無法負擔', x: 90, y: 90, cat: 'A' },
-          { id: 'A05', label: '看護相處', desc: '看護與家人/長輩相處不良', x: 75, y: 48, cat: 'A' },
-          { id: 'A06', label: '看護技能', desc: '看護技能不足或不專業', x: 60, y: 88, cat: 'A' },
-          { id: 'A07', label: '臨時看護', desc: '找不到可信任的臨時看護', x: 80, y: 75, cat: 'A' },
-          { id: 'A08', label: '面試挑選', desc: '不知道如何面試挑選看護', x: 45, y: 40, cat: 'A' },
-          { id: 'A09', label: '合約條款', desc: '看護合約條款不清楚', x: 35, y: 30, cat: 'A' },
-          { id: 'A10', label: '輪照共識', desc: '家人輪流照顧但缺乏共識', x: 85, y: 45, cat: 'A' },
-          { id: 'A11', label: '手足分擔', desc: '手足不願分擔照顧責任', x: 92, y: 40, cat: 'A' },
-          { id: 'A12', label: '家人技能', desc: '家人照顧技能不足', x: 30, y: 85, cat: 'A' },
-          { id: 'A13', label: '獨自照顧', desc: '獨自照顧無人支援', x: 90, y: 95, cat: 'A' },
-          { id: 'A14', label: '人力中斷', desc: '照顧人力突然中斷', x: 92, y: 96, cat: 'A' },
-          { id: 'A15', label: '訓練管理', desc: '不知道如何訓練或管理看護', x: 65, y: 60, cat: 'A' },
-          { id: 'B01', label: '失智照顧', desc: '不了解失智症照顧技巧', x: 70, y: 92, cat: 'B' },
-          { id: 'B02', label: '協助洗澡', desc: '不知道如何協助長輩洗澡', x: 35, y: 65, cat: 'B' },
-          { id: 'B03', label: '抗拒洗澡', desc: '長輩抗拒洗澡或更衣', x: 75, y: 55, cat: 'B' },
-          { id: 'B04', label: '餵食吞嚥', desc: '不知道如何餵食吞嚥困難者', x: 60, y: 95, cat: 'B' },
-          { id: 'B05', label: '翻身拍背', desc: '不會翻身拍背等基礎照護', x: 25, y: 70, cat: 'B' },
-          { id: 'B06', label: '預防壓瘡', desc: '不知道如何預防壓瘡', x: 30, y: 80, cat: 'B' },
-          { id: 'B07', label: '管路照護', desc: '不了解鼻胃管/尿管照護', x: 55, y: 94, cat: 'B' },
-          { id: 'B08', label: '協助復健', desc: '不知道如何協助復健運動', x: 45, y: 45, cat: 'B' },
-          { id: 'B09', label: '藥物管理', desc: '藥物管理混亂或忘記給藥', x: 25, y: 85, cat: 'B' },
-          { id: 'B10', label: '觀察病情', desc: '不知道如何觀察病情變化', x: 60, y: 80, cat: 'B' },
-          { id: 'B11', label: '緊急處理', desc: '緊急狀況不知如何處理', x: 45, y: 98, cat: 'B' },
-          { id: 'B12', label: '預防跌倒', desc: '不知道如何預防跌倒', x: 30, y: 92, cat: 'B' },
-          { id: 'B13', label: '營養調理', desc: '營養調理不知從何做起', x: 40, y: 40, cat: 'B' },
-          { id: 'B14', label: '傷口照護', desc: '傷口照護不會處理', x: 55, y: 90, cat: 'B' },
-          { id: 'B15', label: '使用輔具', desc: '不知道如何使用醫療輔具', x: 35, y: 60, cat: 'B' },
-          { id: 'C01', label: '失智溝通', desc: '無法和失智長輩有效溝通', x: 80, y: 85, cat: 'C' },
-          { id: 'C02', label: '情緒暴躁', desc: '長輩情緒暴躁易怒', x: 75, y: 75, cat: 'C' },
-          { id: 'C03', label: '妄想幻覺', desc: '長輩出現妄想或幻覺', x: 85, y: 82, cat: 'C' },
-          { id: 'C04', label: '重複問話', desc: '長輩重複問同樣問題', x: 65, y: 35, cat: 'C' },
-          { id: 'C05', label: '不配合照', desc: '長輩不配合照顧', x: 80, y: 88, cat: 'C' },
-          { id: 'C06', label: '懷疑被偷', desc: '長輩懷疑東西被偷', x: 70, y: 40, cat: 'C' },
-          { id: 'C07', label: '安撫情緒', desc: '不知道如何安撫長輩情緒', x: 60, y: 75, cat: 'C' },
-          { id: 'C08', label: '日夜顛倒', desc: '長輩日夜顛倒吵鬧', x: 75, y: 85, cat: 'C' },
-          { id: 'C09', label: '拒絕就醫', desc: '長輩拒絕就醫或服藥', x: 85, y: 90, cat: 'C' },
-          { id: 'C10', label: '家人不合', desc: '家人對照顧方式意見不合', x: 90, y: 45, cat: 'C' },
-          { id: 'C11', label: '說服使用', desc: '無法說服長輩使用資源', x: 80, y: 48, cat: 'C' },
-          { id: 'C12', label: '性格改變', desc: '長輩性格改變難以相處', x: 70, y: 30, cat: 'C' },
-          { id: 'D01', label: '資源認知', desc: '不知道有哪些長照資源可用', x: 20, y: 45, cat: 'D' },
-          { id: 'D02', label: '申請服務', desc: '不知道如何申請長照服務', x: 25, y: 85, cat: 'D' },
-          { id: 'D03', label: '流程複雜', desc: '長照申請流程太複雜', x: 50, y: 60, cat: 'D' },
-          { id: 'D04', label: '補助資格', desc: '不知道自己符合哪些補助', x: 30, y: 40, cat: 'D' },
-          { id: 'D05', label: '額度不足', desc: '長照額度不夠用', x: 85, y: 88, cat: 'D' },
-          { id: 'D06', label: '日照中心', desc: '找不到適合的日照中心', x: 60, y: 75, cat: 'D' },
-          { id: 'D07', label: '身障證明', desc: '不知道如何申請身心障礙證明', x: 35, y: 35, cat: 'D' },
-          { id: 'D08', label: '輔具租購', desc: '輔具租借或購買不知從何找起', x: 25, y: 30, cat: 'D' },
-          { id: 'D09', label: '無障改造', desc: '居家無障礙改造不知道怎麼做', x: 55, y: 65, cat: 'D' },
-          { id: 'D10', label: '喘息使用', desc: '不了解喘息服務怎麼用', x: 25, y: 70, cat: 'D' },
-          { id: 'D11', label: '送餐服務', desc: '送餐服務找不到或不合胃口', x: 30, y: 25, cat: 'D' },
-          { id: 'D12', label: '交通接送', desc: '交通接送資源不足', x: 70, y: 80, cat: 'D' },
-          { id: 'E01', label: '科別選擇', desc: '不知道該看哪一科', x: 15, y: 30, cat: 'E' },
-          { id: 'E02', label: '尋找醫院', desc: '找不到好的醫師或醫院', x: 45, y: 60, cat: 'E' },
-          { id: 'E03', label: '就醫往返', desc: '頻繁就醫往返太辛苦', x: 65, y: 70, cat: 'E' },
-          { id: 'E04', label: '出院銜接', desc: '出院準備不知道如何銜接', x: 70, y: 95, cat: 'E' },
-          { id: 'E05', label: '住院人力', desc: '住院照護人力不足', x: 85, y: 92, cat: 'E' },
-          { id: 'E06', label: '醫療費用', desc: '醫療費用負擔過重', x: 80, y: 88, cat: 'E' },
-          { id: 'E07', label: '病情了解', desc: '不了解病情與治療選項', x: 50, y: 75, cat: 'E' },
-          { id: 'E08', label: '藥物副作', desc: '藥物副作用難以處理', x: 60, y: 65, cat: 'E' },
-          { id: 'E09', label: '抗拒回診', desc: '長輩抗拒回診或檢查', x: 75, y: 70, cat: 'E' },
-          { id: 'E10', label: '醫病溝通', desc: '醫病溝通困難', x: 65, y: 60, cat: 'E' },
-          { id: 'F01', label: '擔心走失', desc: '擔心長輩走失', x: 60, y: 95, cat: 'F' },
-          { id: 'F02', label: '環境跌倒', desc: '家中環境容易跌倒', x: 40, y: 92, cat: 'F' },
-          { id: 'F03', label: '瓦斯安全', desc: '長輩獨自操作瓦斯不安全', x: 50, y: 90, cat: 'F' },
-          { id: 'F04', label: '浴室濕滑', desc: '浴室濕滑危險', x: 30, y: 88, cat: 'F' },
-          { id: 'F05', label: '夜間遊走', desc: '長輩半夜遊走有危險', x: 70, y: 90, cat: 'F' },
-          { id: 'F06', label: '動線不適', desc: '家中動線不適合輪椅/助行器', x: 55, y: 75, cat: 'F' },
-          { id: 'F07', label: '緊急呼叫', desc: '沒有緊急呼叫系統', x: 20, y: 85, cat: 'F' },
-          { id: 'F08', label: '門檻出入', desc: '門檻太高出入不便', x: 35, y: 60, cat: 'F' },
-          { id: 'G01', label: '費用負擔', desc: '照顧費用龐大不知如何負擔', x: 90, y: 98, cat: 'G' },
-          { id: 'G02', label: '財產詐騙', desc: '擔心長輩財產被詐騙', x: 75, y: 85, cat: 'G' },
-          { id: 'G03', label: '財產保護', desc: '不知道如何做財產保護', x: 65, y: 70, cat: 'G' },
-          { id: 'G04', label: '監護宣告', desc: '需要申請監護宣告但不知如何進行', x: 70, y: 60, cat: 'G' },
-          { id: 'G05', label: '遺產規劃', desc: '遺產規劃不知從何開始', x: 65, y: 40, cat: 'G' },
-          { id: 'G06', label: '意定監護', desc: '不了解意定監護', x: 60, y: 35, cat: 'G' },
-          { id: 'G07', label: '帳戶管理', desc: '長輩帳戶管理混亂', x: 50, y: 45, cat: 'G' },
-          { id: 'G08', label: '費用報稅', desc: '醫療費用報稅不清楚', x: 25, y: 25, cat: 'G' },
-          { id: 'G09', label: '保險理賠', desc: '保險理賠申請困難', x: 60, y: 55, cat: 'G' },
-          { id: 'G10', label: '財產爭議', desc: '手足對財產分配有爭議', x: 95, y: 45, cat: 'G' },
-          { id: 'H01', label: '選擇機構', desc: '不知道如何選擇適合的機構', x: 50, y: 85, cat: 'H' },
-          { id: 'H02', label: '機構費用', desc: '機構費用太高', x: 85, y: 90, cat: 'H' },
-          { id: 'H03', label: '空床尋找', desc: '找不到有空床位的機構', x: 80, y: 88, cat: 'H' },
-          { id: 'H04', label: '照顧品質', desc: '擔心機構照顧品質', x: 65, y: 92, cat: 'H' },
-          { id: 'H05', label: '抗拒入住', desc: '長輩抗拒入住機構', x: 85, y: 80, cat: 'H' },
-          { id: 'H06', label: '家人分歧', desc: '家人對是否送機構意見分歧', x: 80, y: 48, cat: 'H' },
-          { id: 'H07', label: '參觀詢問', desc: '參觀機構不知道該問什麼', x: 35, y: 35, cat: 'H' },
-          { id: 'H08', label: '評估機構', desc: '不知道如何評估機構好壞', x: 55, y: 70, cat: 'H' },
-          { id: 'I01', label: '壓力崩潰', desc: '照顧壓力大情緒崩潰', x: 85, y: 98, cat: 'I' },
-          { id: 'I02', label: '沒有時間', desc: '沒有自己的時間', x: 80, y: 85, cat: 'I' },
-          { id: 'I03', label: '健康問題', desc: '身體出現健康問題', x: 75, y: 90, cat: 'I' },
-          { id: 'I04', label: '孤單無助', desc: '覺得孤單無人理解', x: 65, y: 80, cat: 'I' },
-          { id: 'I05', label: '睡眠品質', desc: '睡眠品質很差', x: 70, y: 92, cat: 'I' },
-          { id: 'I06', label: '工作平衡', desc: '工作與照顧難以平衡', x: 88, y: 90, cat: 'I' },
-          { id: 'I07', label: '紓壓方式', desc: '不知道如何紓壓', x: 45, y: 40, cat: 'I' },
-          { id: 'I08', label: '愧疚自責', desc: '感到愧疚或自責', x: 60, y: 65, cat: 'I' },
-          { id: 'J01', label: '預立醫療', desc: '不了解預立醫療決定', x: 50, y: 60, cat: 'J' },
-          { id: 'J02', label: '善終討論', desc: '不知道如何和家人討論善終議題', x: 75, y: 70, cat: 'J' },
+            { id: 'A01', label: '找不外看', desc: '找不到外籍看護', x: 85, y: 95, cat: 'A' },
+            { id: 'A02', label: '外看逃離', desc: '外籍看護逃跑或期滿離境', x: 95, y: 98, cat: 'A' },
+            { id: 'A03', label: '申請外看', desc: '不知道如何申請外籍看護', x: 40, y: 45, cat: 'A' },
+            { id: 'A04', label: '本看太貴', desc: '本國看護費用太高無法負擔', x: 90, y: 90, cat: 'A' },
+            { id: 'A05', label: '看護相處', desc: '看護與家人/長輩相處不良', x: 75, y: 48, cat: 'A' },
+            { id: 'A06', label: '看護技能', desc: '看護技能不足或不專業', x: 60, y: 88, cat: 'A' },
+            { id: 'A07', label: '臨時看護', desc: '找不到可信任的臨時看護', x: 80, y: 75, cat: 'A' },
+            { id: 'A08', label: '面試挑選', desc: '不知道如何面試挑選看護', x: 45, y: 40, cat: 'A' },
+            { id: 'A09', label: '合約條款', desc: '看護合約條款不清楚', x: 35, y: 30, cat: 'A' },
+            { id: 'A10', label: '輪照共識', desc: '家人輪流照顧但缺乏共識', x: 85, y: 45, cat: 'A' },
+            { id: 'A11', label: '手足分擔', desc: '手足不願分擔照顧責任', x: 92, y: 40, cat: 'A' },
+            { id: 'A12', label: '家人技能', desc: '家人照顧技能不足', x: 30, y: 85, cat: 'A' },
+            { id: 'A13', label: '獨自照顧', desc: '獨自照顧無人支援', x: 90, y: 95, cat: 'A' },
+            { id: 'A14', label: '人力中斷', desc: '照顧人力突然中斷', x: 92, y: 96, cat: 'A' },
+            { id: 'A15', label: '訓練管理', desc: '不知道如何訓練或管理看護', x: 65, y: 60, cat: 'A' },
+            { id: 'B01', label: '失智照顧', desc: '不了解失智症照顧技巧', x: 70, y: 92, cat: 'B' },
+            { id: 'B02', label: '協助洗澡', desc: '不知道如何協助長輩洗澡', x: 35, y: 65, cat: 'B' },
+            { id: 'B03', label: '抗拒洗澡', desc: '長輩抗拒洗澡或更衣', x: 75, y: 55, cat: 'B' },
+            { id: 'B04', label: '餵食吞嚥', desc: '不知道如何餵食吞嚥困難者', x: 60, y: 95, cat: 'B' },
+            { id: 'B05', label: '翻身拍背', desc: '不會翻身拍背等基礎照護', x: 25, y: 70, cat: 'B' },
+            { id: 'B06', label: '預防壓瘡', desc: '不知道如何預防壓瘡', x: 30, y: 80, cat: 'B' },
+            { id: 'B07', label: '管路照護', desc: '不了解鼻胃管/尿管照護', x: 55, y: 94, cat: 'B' },
+            { id: 'B08', label: '協助復健', desc: '不知道如何協助復健運動', x: 45, y: 45, cat: 'B' },
+            { id: 'B09', label: '藥物管理', desc: '藥物管理混亂或忘記給藥', x: 25, y: 85, cat: 'B' },
+            { id: 'B10', label: '觀察病情', desc: '不知道如何觀察病情變化', x: 60, y: 80, cat: 'B' },
+            { id: 'B11', label: '緊急處理', desc: '緊急狀況不知如何處理', x: 45, y: 98, cat: 'B' },
+            { id: 'B12', label: '預防跌倒', desc: '不知道如何預防跌倒', x: 30, y: 92, cat: 'B' },
+            { id: 'B13', label: '營養調理', desc: '營養調理不知從何做起', x: 40, y: 40, cat: 'B' },
+            { id: 'B14', label: '傷口照護', desc: '傷口照護不會處理', x: 55, y: 90, cat: 'B' },
+            { id: 'B15', label: '使用輔具', desc: '不知道如何使用醫療輔具', x: 35, y: 60, cat: 'B' },
+            { id: 'C01', label: '失智溝通', desc: '無法和失智長輩有效溝通', x: 80, y: 85, cat: 'C' },
+            { id: 'C02', label: '情緒暴躁', desc: '長輩情緒暴躁易怒', x: 75, y: 75, cat: 'C' },
+            { id: 'C03', label: '妄想幻覺', desc: '長輩出現妄想或幻覺', x: 85, y: 82, cat: 'C' },
+            { id: 'C04', label: '重複問話', desc: '長輩重複問同樣問題', x: 65, y: 35, cat: 'C' },
+            { id: 'C05', label: '不配合照', desc: '長輩不配合照顧', x: 80, y: 88, cat: 'C' },
+            { id: 'C06', label: '懷疑被偷', desc: '長輩懷疑東西被偷', x: 70, y: 40, cat: 'C' },
+            { id: 'C07', label: '安撫情緒', desc: '不知道如何安撫長輩情緒', x: 60, y: 75, cat: 'C' },
+            { id: 'C08', label: '日夜顛倒', desc: '長輩日夜顛倒吵鬧', x: 75, y: 85, cat: 'C' },
+            { id: 'C09', label: '拒絕就醫', desc: '長輩拒絕就醫或服藥', x: 85, y: 90, cat: 'C' },
+            { id: 'C10', label: '家人不合', desc: '家人對照顧方式意見不合', x: 90, y: 45, cat: 'C' },
+            { id: 'C11', label: '說服使用', desc: '無法說服長輩使用資源', x: 80, y: 48, cat: 'C' },
+            { id: 'C12', label: '性格改變', desc: '長輩性格改變難以相處', x: 70, y: 30, cat: 'C' },
+            { id: 'D01', label: '資源認知', desc: '不知道有哪些長照資源可用', x: 20, y: 45, cat: 'D' },
+            { id: 'D02', label: '申請服務', desc: '不知道如何申請長照服務', x: 25, y: 85, cat: 'D' },
+            { id: 'D03', label: '流程複雜', desc: '長照申請流程太複雜', x: 50, y: 60, cat: 'D' },
+            { id: 'D04', label: '補助資格', desc: '不知道自己符合哪些補助', x: 30, y: 40, cat: 'D' },
+            { id: 'D05', label: '額度不足', desc: '長照額度不夠用', x: 85, y: 88, cat: 'D' },
+            { id: 'D06', label: '日照中心', desc: '找不到適合的日照中心', x: 60, y: 75, cat: 'D' },
+            { id: 'D07', label: '身障證明', desc: '不知道如何申請身心障礙證明', x: 35, y: 35, cat: 'D' },
+            { id: 'D08', label: '輔具租購', desc: '輔具租借或購買不知從何找起', x: 25, y: 30, cat: 'D' },
+            { id: 'D09', label: '無障改造', desc: '居家無障礙改造不知道怎麼做', x: 55, y: 65, cat: 'D' },
+            { id: 'D10', label: '喘息使用', desc: '不了解喘息服務怎麼用', x: 25, y: 70, cat: 'D' },
+            { id: 'D11', label: '送餐服務', desc: '送餐服務找不到或不合胃口', x: 30, y: 25, cat: 'D' },
+            { id: 'D12', label: '交通接送', desc: '交通接送資源不足', x: 70, y: 80, cat: 'D' },
+            { id: 'E01', label: '科別選擇', desc: '不知道該看哪一科', x: 15, y: 30, cat: 'E' },
+            { id: 'E02', label: '尋找醫院', desc: '找不到好的醫師或醫院', x: 45, y: 60, cat: 'E' },
+            { id: 'E03', label: '就醫往返', desc: '頻繁就醫往返太辛苦', x: 65, y: 70, cat: 'E' },
+            { id: 'E04', label: '出院銜接', desc: '出院準備不知道如何銜接', x: 70, y: 95, cat: 'E' },
+            { id: 'E05', label: '住院人力', desc: '住院照護人力不足', x: 85, y: 92, cat: 'E' },
+            { id: 'E06', label: '醫療費用', desc: '醫療費用負擔過重', x: 80, y: 88, cat: 'E' },
+            { id: 'E07', label: '病情了解', desc: '不了解病情與治療選項', x: 50, y: 75, cat: 'E' },
+            { id: 'E08', label: '藥物副作', desc: '藥物副作用難以處理', x: 60, y: 65, cat: 'E' },
+            { id: 'E09', label: '抗拒回診', desc: '長輩抗拒回診或檢查', x: 75, y: 70, cat: 'E' },
+            { id: 'E10', label: '醫病溝通', desc: '醫病溝通困難', x: 65, y: 60, cat: 'E' },
+            { id: 'F01', label: '擔心走失', desc: '擔心長輩走失', x: 60, y: 95, cat: 'F' },
+            { id: 'F02', label: '環境跌倒', desc: '家中環境容易跌倒', x: 40, y: 92, cat: 'F' },
+            { id: 'F03', label: '瓦斯安全', desc: '長輩獨自操作瓦斯不安全', x: 50, y: 90, cat: 'F' },
+            { id: 'F04', label: '浴室濕滑', desc: '浴室濕滑危險', x: 30, y: 88, cat: 'F' },
+            { id: 'F05', label: '夜間遊走', desc: '長輩半夜遊走有危險', x: 70, y: 90, cat: 'F' },
+            { id: 'F06', label: '動線不適', desc: '家中動線不適合輪椅/助行器', x: 55, y: 75, cat: 'F' },
+            { id: 'F07', label: '緊急呼叫', desc: '沒有緊急呼叫系統', x: 20, y: 85, cat: 'F' },
+            { id: 'F08', label: '門檻出入', desc: '門檻太高出入不便', x: 35, y: 60, cat: 'F' },
+            { id: 'G01', label: '費用負擔', desc: '照顧費用龐大不知如何負擔', x: 90, y: 98, cat: 'G' },
+            { id: 'G02', label: '財產詐騙', desc: '擔心長輩財產被詐騙', x: 75, y: 85, cat: 'G' },
+            { id: 'G03', label: '財產保護', desc: '不知道如何做財產保護', x: 65, y: 70, cat: 'G' },
+            { id: 'G04', label: '監護宣告', desc: '需要申請監護宣告但不知如何進行', x: 70, y: 60, cat: 'G' },
+            { id: 'G05', label: '遺產規劃', desc: '遺產規劃不知從何開始', x: 65, y: 40, cat: 'G' },
+            { id: 'G06', label: '意定監護', desc: '不了解意定監護', x: 60, y: 35, cat: 'G' },
+            { id: 'G07', label: '帳戶管理', desc: '長輩帳戶管理混亂', x: 50, y: 45, cat: 'G' },
+            { id: 'G08', label: '費用報稅', desc: '醫療費用報稅不清楚', x: 25, y: 25, cat: 'G' },
+            { id: 'G09', label: '保險理賠', desc: '保險理賠申請困難', x: 60, y: 55, cat: 'G' },
+            { id: 'G10', label: '財產爭議', desc: '手足對財產分配有爭議', x: 95, y: 45, cat: 'G' },
+            { id: 'H01', label: '選擇機構', desc: '不知道如何選擇適合的機構', x: 50, y: 85, cat: 'H' },
+            { id: 'H02', label: '機構費用', desc: '機構費用太高', x: 85, y: 90, cat: 'H' },
+            { id: 'H03', label: '空床尋找', desc: '找不到有空床位的機構', x: 80, y: 88, cat: 'H' },
+            { id: 'H04', label: '照顧品質', desc: '擔心機構照顧品質', x: 65, y: 92, cat: 'H' },
+            { id: 'H05', label: '抗拒入住', desc: '長輩抗拒入住機構', x: 85, y: 80, cat: 'H' },
+            { id: 'H06', label: '家人分歧', desc: '家人對是否送機構意見分歧', x: 80, y: 48, cat: 'H' },
+            { id: 'H07', label: '參觀詢問', desc: '參觀機構不知道該問什麼', x: 35, y: 35, cat: 'H' },
+            { id: 'H08', label: '評估機構', desc: '不知道如何評估機構好壞', x: 55, y: 70, cat: 'H' },
+            { id: 'I01', label: '壓力崩潰', desc: '照顧壓力大情緒崩潰', x: 85, y: 98, cat: 'I' },
+            { id: 'I02', label: '沒有時間', desc: '沒有自己的時間', x: 80, y: 85, cat: 'I' },
+            { id: 'I03', label: '健康問題', desc: '身體出現健康問題', x: 75, y: 90, cat: 'I' },
+            { id: 'I04', label: '孤單無助', desc: '覺得孤單無人理解', x: 65, y: 80, cat: 'I' },
+            { id: 'I05', label: '睡眠品質', desc: '睡眠品質很差', x: 70, y: 92, cat: 'I' },
+            { id: 'I06', label: '工作平衡', desc: '工作與照顧難以平衡', x: 88, y: 90, cat: 'I' },
+            { id: 'I07', label: '紓壓方式', desc: '不知道如何紓壓', x: 45, y: 40, cat: 'I' },
+            { id: 'I08', label: '愧疚自責', desc: '感到愧疚或自責', x: 60, y: 65, cat: 'I' },
+            { id: 'J01', label: '預立醫療', desc: '不了解預立醫療決定', x: 50, y: 60, cat: 'J' },
+            { id: 'J02', label: '善終討論', desc: '不知道如何和家人討論善終議題', x: 75, y: 70, cat: 'J' },
         ];
 
         const categories = {
-          A: '人力資源問題',
-          B: '照顧技巧與知識',
-          C: '溝通與情緒問題',
-          D: '長照資源與申請',
-          E: '醫療照護問題',
-          F: '居家安全問題',
-          G: '財務法律問題',
-          H: '機構安置問題',
-          I: '照顧者自我照顧',
-          J: '預立醫療與善終',
+            A: '人力資源問題',
+            B: '照顧技巧與知識',
+            C: '溝通與情緒問題',
+            D: '長照資源與申請',
+            E: '醫療照護問題',
+            F: '居家安全問題',
+            G: '財務法律問題',
+            H: '機構安置問題',
+            I: '照顧者自我照顧',
+            J: '預立醫療與善終',
         };
 
         const QUADRANTS = {
-          Q1: { title: '危機處理區 (高重要/高難度)', color: 'bg-red-100 border-red-300 text-red-800', dotColor: '#EF4444' },
-          Q2: { title: '優先改善區 (高重要/低難度)', color: 'bg-yellow-100 border-yellow-300 text-yellow-800', dotColor: '#F59E0B' },
-          Q3: { title: '日常維護區 (低重要/低難度)', color: 'bg-green-100 border-green-300 text-green-800', dotColor: '#10B981' },
-          Q4: { title: '長期規劃區 (低重要/高難度)', color: 'bg-blue-100 border-blue-300 text-blue-800', dotColor: '#3B82F6' },
+            Q1: { title: '危機處理區 (高重要/高難度)', color: 'bg-red-100 border-red-300 text-red-800', dotColor: '#EF4444' },
+            Q2: { title: '優先改善區 (高重要/低難度)', color: 'bg-yellow-100 border-yellow-300 text-yellow-800', dotColor: '#F59E0B' },
+            Q3: { title: '日常維護區 (低重要/低難度)', color: 'bg-green-100 border-green-300 text-green-800', dotColor: '#10B981' },
+            Q4: { title: '長期規劃區 (低重要/高難度)', color: 'bg-blue-100 border-blue-300 text-blue-800', dotColor: '#3B82F6' },
         };
 
         const getQuadrant = (x, y) => {
-          if (x >= 50 && y >= 50) return 'Q1';
-          if (x < 50 && y >= 50) return 'Q2';
-          if (x < 50 && y < 50) return 'Q3';
-          return 'Q4';
+            if (x >= 50 && y >= 50) return 'Q1';
+            if (x < 50 && y >= 50) return 'Q2';
+            if (x < 50 && y < 50) return 'Q3';
+            return 'Q4';
         };
 
-        // 3. 你的主程式 (去除 export default)
-        function LtcAnalysisApp() {
-          // --- 請把你的主程式內容貼在這裡 (從 const [currentStep... 到最後的 return (...)) ---
-          // 這裡為了讓它能動，我先把你剛剛提供的內容複製進來，你可以檢查一下是否完整
-          
-          const [currentStep, setCurrentStep] = useState('survey');
-          const [questionsData, setQuestionsData] = useState(INITIAL_DATA);
-          const [selectedIssues, setSelectedIssues] = useState(new Set());
-          const [showAll, setShowAll] = useState(false);
-          const [hoveredPoint, setHoveredPoint] = useState(null);
+        // --- 主程式元件 ---
+        function App() {
+            const [currentStep, setCurrentStep] = useState('survey');
+            const [questionsData, setQuestionsData] = useState(INITIAL_DATA);
+            const [selectedIssues, setSelectedIssues] = useState(new Set());
+            const [showAll, setShowAll] = useState(false);
+            const [hoveredPoint, setHoveredPoint] = useState(null);
+            const [adminSearch, setAdminSearch] = useState('');
 
-          const [knowledgeBase, setKnowledgeBase] = useState(() => {
-            const defaultLink = 'https://docs.google.com/presentation/d/12jtqOgifk8INhK26MNmwKupScSR3GqEgEErThAp4Wek/edit?usp=sharing';
-            const initialKb = {};
-            INITIAL_DATA.forEach(item => {
-              initialKb[item.id] = defaultLink;
+            const [knowledgeBase, setKnowledgeBase] = useState(() => {
+                const defaultLink = 'https://docs.google.com/presentation/d/12jtqOgifk8INhK26MNmwKupScSR3GqEgEErThAp4Wek/edit?usp=sharing';
+                const initialKb = {};
+                INITIAL_DATA.forEach(item => { initialKb[item.id] = defaultLink; });
+                return initialKb;
             });
-            return initialKb;
-          });
 
-          const [adminSearch, setAdminSearch] = useState('');
+            const toggleIssue = (id) => {
+                const newSet = new Set(selectedIssues);
+                if (newSet.has(id)) newSet.delete(id);
+                else newSet.add(id);
+                setSelectedIssues(newSet);
+            };
 
-          const toggleIssue = (id) => {
-            const newSet = new Set(selectedIssues);
-            if (newSet.has(id)) {
-              newSet.delete(id);
-            } else {
-              newSet.add(id);
-            }
-            setSelectedIssues(newSet);
-          };
+            const selectAllInCategory = (catKey) => {
+                const newSet = new Set(selectedIssues);
+                const catItems = questionsData.filter(i => i.cat === catKey);
+                const allSelected = catItems.every(i => newSet.has(i.id));
+                catItems.forEach(i => {
+                    if (allSelected) newSet.delete(i.id);
+                    else newSet.add(i.id);
+                });
+                setSelectedIssues(newSet);
+            };
 
-          const selectAllInCategory = (catKey) => {
-            const newSet = new Set(selectedIssues);
-            const catItems = questionsData.filter(i => i.cat === catKey);
-            const allSelected = catItems.every(i => newSet.has(i.id));
-            
-            catItems.forEach(i => {
-              if (allSelected) newSet.delete(i.id);
-              else newSet.add(i.id);
-            });
-            setSelectedIssues(newSet);
-          };
+            const handleFinishSurvey = () => {
+                if (selectedIssues.size === 0) { alert("請至少選擇一個問題"); return; }
+                setCurrentStep('analysis');
+                setShowAll(false);
+            };
 
-          const handleFinishSurvey = () => {
-            if (selectedIssues.size === 0) {
-              alert("請至少選擇一個問題");
-              return;
-            }
-            setCurrentStep('analysis');
-            setShowAll(false);
-          };
+            const handleUpdateQuestion = (id, field, value) => {
+                setQuestionsData(prev => prev.map(item => {
+                    if (item.id === id) {
+                        if (field === 'x' || field === 'y') {
+                            const numVal = parseInt(value, 10);
+                            return { ...item, [field]: isNaN(numVal) ? 0 : Math.min(100, Math.max(0, numVal)) };
+                        }
+                        return { ...item, [field]: value };
+                    }
+                    return item;
+                }));
+            };
 
-          const handleUpdateQuestion = (id, field, value) => {
-            setQuestionsData(prevData => 
-              prevData.map(item => {
-                if (item.id === id) {
-                  if (field === 'x' || field === 'y') {
-                    const numVal = parseInt(value, 10);
-                    return { ...item, [field]: isNaN(numVal) ? 0 : Math.min(100, Math.max(0, numVal)) };
-                  }
-                  return { ...item, [field]: value };
-                }
-                return item;
-              })
-            );
-          };
+            const handleUpdateLink = (id, url) => {
+                setKnowledgeBase(prev => ({ ...prev, [id]: url }));
+            };
 
-          const handleUpdateLink = (id, url) => {
-            setKnowledgeBase(prev => ({
-              ...prev,
-              [id]: url
-            }));
-          };
+            // --- 介面渲染：後台管理 ---
+            if (currentStep === 'admin') {
+                const filteredData = questionsData.filter(item => 
+                    item.label.includes(adminSearch) || item.desc.includes(adminSearch) || item.id.includes(adminSearch)
+                );
 
-          const handleConnectDrive = () => {
-            alert("【模擬系統提示】\n已成功連結至 Google Drive 帳號：user@example.com\n\n注意：這是一個前端演示，實際應用需要後端 API 整合 OAuth 驗證。");
-          };
-
-          const handlePrint = () => {
-            window.print();
-          };
-
-          // --- 畫面渲染邏輯 ---
-          // 1. 報告預覽畫面
-          if (currentStep === 'report') {
-            const date = new Date().toLocaleDateString('zh-TW');
-            const q1Issues = questionsData.filter(i => selectedIssues.has(i.id) && getQuadrant(i.x, i.y) === 'Q1');
-            const q2Issues = questionsData.filter(i => selectedIssues.has(i.id) && getQuadrant(i.x, i.y) === 'Q2');
-
-            return (
-              <div className="max-w-4xl mx-auto min-h-screen bg-gray-50 font-sans print:bg-white print:p-0">
-                <div className="p-4 flex justify-between items-center bg-gray-800 text-white shadow-lg mb-8 print:hidden sticky top-0 z-50 rounded-b-lg">
-                  <div className="flex items-center gap-4">
-                     <button onClick={() => setCurrentStep('analysis')} className="flex items-center gap-2 text-gray-300 hover:text-white transition-colors">
-                        <ChevronLeft size={20} /> 返回分析
-                     </button>
-                     <h2 className="font-bold text-lg border-l border-gray-600 pl-4">報告預覽模式</h2>
-                  </div>
-                  <button onClick={handlePrint} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-full font-bold shadow-md transition-all">
-                    <Printer size={18} /> 列印 / 存為 PDF
-                  </button>
-                </div>
-
-                <div className="bg-white shadow-2xl print:shadow-none mx-auto w-full max-w-[210mm] p-[10mm] min-h-[297mm] box-border">
-                   <header className="border-b-2 border-indigo-600 pb-4 mb-6 flex justify-between items-end">
-                      <div>
-                         <h1 className="text-3xl font-bold text-gray-800 mb-1">長照困境分析報告</h1>
-                         <p className="text-gray-500 text-sm">自我檢測與行動計畫工作表</p>
-                      </div>
-                      <div className="text-right">
-                         <div className="text-sm text-gray-500">檢測日期</div>
-                         <div className="font-bold text-gray-800 text-lg">{date}</div>
-                      </div>
-                   </header>
-
-                   <section className="bg-gray-50 rounded-lg p-4 mb-6 flex justify-between items-center print:bg-gray-100">
-                      <div className="text-sm text-gray-600">
-                         您在 <span className="font-bold text-gray-900">{selectedIssues.size}</span> 個項目中表示面臨挑戰。
-                         <br/>以下分析圖表協助您聚焦問題的優先順序。
-                      </div>
-                      <div className="flex gap-4">
-                         <div className="text-center">
-                            <span className="block font-bold text-red-600 text-xl">{q1Issues.length}</span>
-                            <span className="text-xs text-gray-500">危機處理</span>
-                         </div>
-                         <div className="text-center">
-                            <span className="block font-bold text-yellow-600 text-xl">{q2Issues.length}</span>
-                            <span className="text-xs text-gray-500">優先改善</span>
-                         </div>
-                      </div>
-                   </section>
-
-                   <div className="flex flex-col md:flex-row gap-6 mb-8">
-                      <div className="w-full md:w-1/2 aspect-square bg-white border border-gray-200 rounded-lg relative">
-                         <div className="absolute inset-2 grid grid-cols-2 grid-rows-2">
-                            <div className="border-r border-b border-gray-200 p-1"><span className="text-[10px] text-yellow-600 font-bold bg-yellow-50 px-1">優先改善</span></div>
-                            <div className="border-b border-gray-200 p-1 text-right"><span className="text-[10px] text-red-600 font-bold bg-red-50 px-1">危機處理</span></div>
-                            <div className="border-r border-gray-200 p-1 flex items-end"><span className="text-[10px] text-green-600 font-bold bg-green-50 px-1">日常維護</span></div>
-                            <div className="p-1 flex items-end justify-end"><span className="text-[10px] text-blue-600 font-bold bg-blue-50 px-1">長期規劃</span></div>
-                         </div>
-                         <svg viewBox="0 0 110 110" className="w-full h-full relative z-10">
-                            <line x1="5" y1="55" x2="105" y2="55" stroke="#cbd5e1" strokeWidth="0.5" />
-                            <line x1="55" y1="105" x2="55" y2="5" stroke="#cbd5e1" strokeWidth="0.5" />
-                            {questionsData.map((item) => {
-                               if (!selectedIssues.has(item.id)) return null;
-                               const quad = getQuadrant(item.x, item.y);
-                               const color = QUADRANTS[quad].dotColor;
-                               return (
-                                 <circle key={item.id} cx={item.x} cy={100 - item.y + 5} r="2" fill={color} stroke="white" strokeWidth="0.5" />
-                               );
-                            })}
-                         </svg>
-                      </div>
-
-                      <div className="w-full md:w-1/2">
-                         <h3 className="font-bold text-gray-800 border-b-2 border-red-200 pb-2 mb-3">🔥 需優先關注的問題</h3>
-                         {q1Issues.length === 0 && q2Issues.length === 0 ? (
-                            <p className="text-gray-500 text-sm">恭喜！目前沒有落入高風險象限的問題。</p>
-                         ) : (
-                            <ul className="space-y-2 text-sm">
-                               {q1Issues.slice(0, 5).map(item => (
-                                  <li key={item.id} className="flex items-start gap-2">
-                                     <span className="text-red-500 font-bold min-w-[3.5em]">[危機]</span>
-                                     <span className="text-gray-800">{item.label}</span>
-                                  </li>
-                               ))}
-                               {q2Issues.slice(0, 5).map(item => (
-                                  <li key={item.id} className="flex items-start gap-2">
-                                     <span className="text-yellow-500 font-bold min-w-[3.5em]">[優先]</span>
-                                     <span className="text-gray-800">{item.label}</span>
-                                  </li>
-                               ))}
-                               {(q1Issues.length + q2Issues.length) > 10 && (
-                                  <li className="text-gray-500 italic pt-1">...以及其他 {q1Issues.length + q2Issues.length - 10} 項問題</li>
-                               )}
-                            </ul>
-                         )}
-                      </div>
-                   </div>
-
-                   <div className="mb-4">
-                      <h3 className="font-bold text-gray-800 text-lg mb-4 flex items-center gap-2">
-                         <Edit3 size={20} /> 照顧計畫與筆記工作表
-                      </h3>
-                      <p className="text-xs text-gray-500 mb-4">請利用下方空間，針對四大照顧領域記錄您的現況盤點、資源需求或下一步行動計畫。</p>
-                      <div className="grid grid-cols-2 gap-6">
-                         <div className="border-2 border-gray-200 rounded-lg p-3 min-h-[160px]">
-                            <div className="font-bold text-gray-700 mb-2 border-b border-gray-200 pb-1">🏥 醫療與護理需求</div>
-                            <div className="w-full h-full min-h-[120px] border-none bg-[linear-gradient(transparent_23px,#e5e7eb_24px)] bg-[length:100%_24px] text-gray-600 text-sm leading-[24px]"></div>
-                         </div>
-                         <div className="border-2 border-gray-200 rounded-lg p-3 min-h-[160px]">
-                            <div className="font-bold text-gray-700 mb-2 border-b border-gray-200 pb-1">🏠 生活照顧與安全環境</div>
-                            <div className="w-full h-full min-h-[120px] border-none bg-[linear-gradient(transparent_23px,#e5e7eb_24px)] bg-[length:100%_24px] text-gray-600 text-sm leading-[24px]"></div>
-                         </div>
-                         <div className="border-2 border-gray-200 rounded-lg p-3 min-h-[160px]">
-                            <div className="font-bold text-gray-700 mb-2 border-b border-gray-200 pb-1">👨‍👩‍👧‍👦 家庭溝通與財務</div>
-                            <div className="w-full h-full min-h-[120px] border-none bg-[linear-gradient(transparent_23px,#e5e7eb_24px)] bg-[length:100%_24px] text-gray-600 text-sm leading-[24px]"></div>
-                         </div>
-                         <div className="border-2 border-gray-200 rounded-lg p-3 min-h-[160px]">
-                            <div className="font-bold text-gray-700 mb-2 border-b border-gray-200 pb-1">☕ 照顧者身心調適</div>
-                            <div className="w-full h-full min-h-[120px] border-none bg-[linear-gradient(transparent_23px,#e5e7eb_24px)] bg-[length:100%_24px] text-gray-600 text-sm leading-[24px]"></div>
-                         </div>
-                      </div>
-                   </div>
-
-                   <footer className="mt-8 text-center text-xs text-gray-400 border-t border-gray-100 pt-4">
-                      <p>本報告由「長照困境診斷雷達」生成。評估結果僅供參考，實際照顧計畫請諮詢專業人員。</p>
-                   </footer>
-                </div>
-              </div>
-            );
-          }
-
-          // 2. Admin 畫面
-          if (currentStep === 'admin') {
-            const filteredData = questionsData.filter(item => 
-              item.label.includes(adminSearch) || 
-              item.desc.includes(adminSearch) ||
-              item.id.includes(adminSearch)
-            );
-
-            return (
-              <div className="max-w-7xl mx-auto p-4 bg-gray-50 min-h-screen font-sans">
-                <header className="bg-white p-6 rounded-xl shadow-sm mb-6 flex justify-between items-center border-l-8 border-indigo-600">
-                  <div>
-                    <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                      <Settings className="text-indigo-600" /> 知識庫內容與座標管理
-                    </h1>
-                    <p className="text-gray-500 text-sm mt-1">管理每個問題的名稱、描述、難易度/重要性座標與對應簡報連結</p>
-                  </div>
-                  <button onClick={() => setCurrentStep('analysis')} className="flex items-center gap-2 text-gray-600 hover:text-indigo-600 transition-colors px-4 py-2 border rounded-lg bg-gray-50 hover:bg-white">
-                    <RotateCcw size={16} /> 返回分析介面
-                  </button>
-                </header>
-
-                <div className="bg-white p-6 rounded-xl shadow-sm mb-6 border border-gray-200">
-                   <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                         <div className="bg-green-100 p-3 rounded-full"><Cloud className="text-green-600" size={24} /></div>
-                         <div>
-                            <h3 className="font-bold text-gray-800">資料來源連結</h3>
-                            <p className="text-sm text-gray-500">連結 Google Drive 以直接選取檔案 (模擬)</p>
-                         </div>
-                      </div>
-                      <button onClick={handleConnectDrive} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg font-medium flex items-center gap-2 shadow-sm">
-                         <img src="https://upload.wikimedia.org/wikipedia/commons/1/12/Google_Drive_icon_%282020%29.svg" alt="Drive" className="w-5 h-5"/> 連結 Google Drive
-                      </button>
-                   </div>
-                </div>
-
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="p-4 border-b border-gray-100 bg-gray-50 flex items-center gap-4">
-                     <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-                        <input type="text" placeholder="搜尋問題編號、名稱或描述..." className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none" value={adminSearch} onChange={(e) => setAdminSearch(e.target.value)} />
-                     </div>
-                     <div className="text-sm text-gray-500">顯示 {filteredData.length} 筆資料</div>
-                  </div>
-
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-gray-100 text-gray-600 text-sm font-bold border-b border-gray-200">
-                          <th className="p-4 w-20">編號</th>
-                          <th className="p-4 w-64">問題內容編輯 (名稱/備註)</th>
-                          <th className="p-4 w-40">座標設定 (0-100)</th>
-                          <th className="p-4">知識簡報連結 (URL)</th>
-                          <th className="p-4 w-20 text-center">狀態</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-sm">
-                        {filteredData.map(item => (
-                          <tr key={item.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors group">
-                            <td className="p-4 font-mono text-gray-500 align-top pt-5">{item.id}</td>
-                            <td className="p-4 align-top">
-                              <div className="flex flex-col gap-2">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-bold text-gray-400 w-8">名稱</span>
-                                  <input type="text" className="font-bold text-gray-800 border border-gray-200 rounded px-2 py-1 w-full focus:ring-1 focus:ring-indigo-500 focus:outline-none" value={item.label} onChange={(e) => handleUpdateQuestion(item.id, 'label', e.target.value)} />
-                                </div>
-                                <div className="flex items-start gap-2">
-                                  <span className="text-xs font-bold text-gray-400 w-8 mt-1">備註</span>
-                                  <textarea className="text-xs text-gray-600 border border-gray-200 rounded px-2 py-1 w-full h-16 resize-none focus:ring-1 focus:ring-indigo-500 focus:outline-none" value={item.desc} onChange={(e) => handleUpdateQuestion(item.id, 'desc', e.target.value)} />
-                                </div>
-                              </div>
-                            </td>
-                            <td className="p-4 align-top">
-                              <div className="flex flex-col gap-2">
-                                 <div className="flex items-center justify-between bg-gray-50 p-1.5 rounded border border-gray-200">
-                                    <span className="text-xs text-gray-500 font-mono">X(難)</span>
-                                    <input type="number" min="0" max="100" className="w-12 text-center text-sm border-gray-300 rounded focus:ring-indigo-500" value={item.x} onChange={(e) => handleUpdateQuestion(item.id, 'x', e.target.value)} />
-                                 </div>
-                                 <div className="flex items-center justify-between bg-gray-50 p-1.5 rounded border border-gray-200">
-                                    <span className="text-xs text-gray-500 font-mono">Y(重)</span>
-                                    <input type="number" min="0" max="100" className="w-12 text-center text-sm border-gray-300 rounded focus:ring-indigo-500" value={item.y} onChange={(e) => handleUpdateQuestion(item.id, 'y', e.target.value)} />
-                                 </div>
-                                 <div className="text-[10px] text-gray-400 text-center mt-1">象限: {getQuadrant(item.x, item.y)}</div>
-                              </div>
-                            </td>
-                            <td className="p-4 align-top pt-5">
-                              <div className="flex items-center gap-2">
-                                <LinkIcon size={16} className="text-gray-400 flex-shrink-0" />
-                                <input type="text" placeholder="請貼上 Google Drive 或 PDF 連結..." className="w-full border border-gray-300 rounded px-2 py-1 text-gray-700 focus:ring-1 focus:ring-indigo-500 focus:outline-none" value={knowledgeBase[item.id] || ''} onChange={(e) => handleUpdateLink(item.id, e.target.value)} />
-                              </div>
-                            </td>
-                            <td className="p-4 text-center align-top pt-5">
-                              {knowledgeBase[item.id] ? (
-                                <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100 text-green-600"><CheckCircle size={16} /></span>
-                              ) : (
-                                <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 text-gray-300"><FileText size={16} /></span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            );
-          }
-
-          // 3. 問卷畫面
-          if (currentStep === 'survey') {
-            return (
-              <div className="max-w-4xl mx-auto p-4 bg-gray-50 min-h-screen font-sans">
-                <header className="mb-8 text-center bg-white p-6 rounded-xl shadow-sm relative">
-                  <div className="absolute top-4 right-4">
-                    <button onClick={() => setCurrentStep('admin')} className="text-gray-400 hover:text-gray-600 flex items-center gap-1 text-xs px-2 py-1 rounded border border-transparent hover:border-gray-200 transition-all">
-                       <Settings size={14} /> 後台管理
-                    </button>
-                  </div>
-                  <h1 className="text-3xl font-bold text-gray-800 mb-2">長照困境診斷雷達</h1>
-                  <p className="text-gray-600">請勾選您目前面臨的照顧難題，系統將為您產生客製化的分析矩陣。</p>
-                </header>
-
-                <div className="space-y-6">
-                  {Object.entries(categories).map(([catKey, catName]) => (
-                    <div key={catKey} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                      <div className="bg-blue-50 px-4 py-3 border-b border-blue-100 flex justify-between items-center">
-                        <h3 className="font-bold text-blue-900">{catKey}. {catName}</h3>
-                        <button onClick={() => selectAllInCategory(catKey)} className="text-xs text-blue-600 hover:text-blue-800 underline">全選/取消</button>
-                      </div>
-                      <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        {questionsData.filter(item => item.cat === catKey).map(item => (
-                          <label key={item.id} className={`flex items-start p-2 rounded cursor-pointer transition-colors ${selectedIssues.has(item.id) ? 'bg-blue-50 ring-1 ring-blue-300' : 'hover:bg-gray-50'}`}>
-                            <input type="checkbox" className="mt-1 mr-3 h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" checked={selectedIssues.has(item.id)} onChange={() => toggleIssue(item.id)} />
+                return (
+                    <div className="max-w-7xl mx-auto p-4 min-h-screen">
+                        <header className="bg-white p-6 rounded-xl shadow-sm mb-6 flex justify-between items-center border-l-8 border-indigo-600">
                             <div>
-                              <div className="font-medium text-gray-900">{item.label}</div>
-                              <div className="text-xs text-gray-500">{item.desc}</div>
+                                <h1 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                                    <Icon name="Settings" className="text-indigo-600" /> 座標與知識庫管理
+                                </h1>
                             </div>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="sticky bottom-0 bg-white border-t p-4 mt-8 flex justify-between items-center shadow-lg">
-                  <div className="text-gray-700">已選擇 <span className="font-bold text-blue-600 text-xl">{selectedIssues.size}</span> 個問題</div>
-                  <button onClick={handleFinishSurvey} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-bold shadow-md transition-all transform hover:scale-105">
-                    開始分析 <ArrowRight size={20} />
-                  </button>
-                </div>
-              </div>
-            );
-          }
-
-          // 4. 分析結果畫面
-          return (
-            <div className="max-w-6xl mx-auto p-4 bg-gray-50 min-h-screen font-sans">
-              <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm">
-                <h2 className="text-2xl font-bold text-gray-800">問題分佈分析</h2>
-                <div className="flex gap-3">
-                   <button onClick={() => setCurrentStep('report')} className="flex items-center gap-2 bg-white text-indigo-600 hover:bg-indigo-50 border border-indigo-200 px-4 py-2 rounded-lg font-bold shadow-sm transition-all">
-                     <FileOutput size={18} /> 📄 匯出分析報告
-                   </button>
-                   <button onClick={() => setCurrentStep('admin')} className="flex items-center gap-2 text-indigo-600 hover:text-indigo-800 px-4 py-2 border border-indigo-200 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors">
-                    <Settings size={16} /> 管理後台
-                  </button>
-                   <button onClick={() => setCurrentStep('survey')} className="flex items-center gap-2 text-gray-600 hover:text-gray-900 px-4 py-2 border rounded-lg hover:bg-gray-50">
-                    <RotateCcw size={16} /> 重選問題
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 flex flex-col gap-4">
-                  <div className="bg-white p-4 rounded-xl shadow-sm flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-gray-700 font-medium"><Filter size={20} className="text-blue-600"/> 顯示模式：</div>
-                    <div className="flex bg-gray-100 p-1 rounded-lg">
-                      <button onClick={() => setShowAll(false)} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${!showAll ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>只看我的問題 ({selectedIssues.size})</button>
-                      <button onClick={() => setShowAll(true)} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${showAll ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>顯示全部 100 題</button>
-                    </div>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-xl shadow-lg relative aspect-square w-full max-h-[600px] border border-gray-200">
-                    <div className="absolute inset-4 pointer-events-none grid grid-cols-2 grid-rows-2">
-                      <div className="flex justify-start items-start p-2 border-r border-b border-gray-100"><span className="text-yellow-600 bg-yellow-50 px-2 py-1 rounded text-xs font-bold">II. 優先改善 (易/重)</span></div>
-                      <div className="flex justify-end items-start p-2 border-b border-gray-100"><span className="text-red-600 bg-red-50 px-2 py-1 rounded text-xs font-bold">I. 危機處理 (難/重)</span></div>
-                      <div className="flex justify-start items-end p-2 border-r border-gray-100"><span className="text-green-600 bg-green-50 px-2 py-1 rounded text-xs font-bold">III. 日常維護 (易/輕)</span></div>
-                      <div className="flex justify-end items-end p-2"><span className="text-blue-600 bg-blue-50 px-2 py-1 rounded text-xs font-bold">IV. 長期規劃 (難/輕)</span></div>
-                    </div>
-                    <svg viewBox="0 0 110 110" className="w-full h-full">
-                      <line x1="5" y1="55" x2="105" y2="55" stroke="#cbd5e1" strokeWidth="0.5" />
-                      <line x1="55" y1="105" x2="55" y2="5" stroke="#cbd5e1" strokeWidth="0.5" />
-                      <text x="105" y="58" fontSize="3" fill="#64748b" textAnchor="end">難度高</text>
-                      <text x="5" y="58" fontSize="3" fill="#64748b" textAnchor="start">難度低</text>
-                      <text x="56" y="5" fontSize="3" fill="#64748b" textAnchor="start">重要性高</text>
-                      <text x="56" y="105" fontSize="3" fill="#64748b" textAnchor="start">重要性低</text>
-                      {questionsData.map((item) => {
-                        const isSelected = selectedIssues.has(item.id);
-                        const hasDoc = knowledgeBase[item.id];
-                        if (!isSelected && !showAll) return null;
-                        const opacity = isSelected ? 1 : 0.2; 
-                        const radius = isSelected ? (hoveredPoint === item.id ? 2.5 : 1.8) : 1;
-                        const quad = getQuadrant(item.x, item.y);
-                        const color = isSelected ? QUADRANTS[quad].dotColor : '#9ca3af';
-                        return (
-                          <g key={item.id} onClick={() => toggleIssue(item.id)} onMouseEnter={() => setHoveredPoint(item.id)} onMouseLeave={() => setHoveredPoint(null)} style={{ cursor: 'pointer', transition: 'all 0.3s' }}>
-                            <circle cx={item.x} cy={100 - item.y + 5} r={radius} fill={color} opacity={opacity} stroke={hasDoc && isSelected ? "#4f46e5" : "white"} strokeWidth={hasDoc && isSelected ? "0.4" : "0.2"} />
-                            {hasDoc && isSelected && (<circle cx={item.x + 1} cy={100 - item.y + 3.5} r="0.6" fill="#4f46e5" />)}
-                            {(isSelected || hoveredPoint === item.id) && (
-                              <text x={item.x} y={100 - item.y + 2} fontSize={isSelected ? "2.5" : "2"} fill={color} opacity={opacity} textAnchor="middle" fontWeight={isSelected ? "bold" : "normal"}>{item.label}</text>
-                            )}
-                          </g>
-                        );
-                      })}
-                    </svg>
-                    {hoveredPoint && (
-                      <div className="absolute top-2 left-2 bg-gray-900 text-white text-sm p-3 rounded shadow-xl z-10 max-w-xs transition-opacity">
-                        {(() => {
-                          const item = questionsData.find(i => i.id === hoveredPoint);
-                          const hasDoc = knowledgeBase[item.id];
-                          return (
-                            <>
-                              <div className="font-bold text-yellow-300 flex items-center gap-2">{item.label} {hasDoc && <span className="text-[10px] bg-indigo-600 px-1 rounded text-white font-normal">📄 含知識簡報</span>}</div>
-                              <div>{item.desc}</div>
-                              <div className="text-xs text-gray-400 mt-1">難度: {item.x} | 重要性: {item.y}</div>
-                            </>
-                          );
-                        })()}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-4 overflow-y-auto h-full max-h-[800px] pr-2">
-                  <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl">
-                    <h3 className="font-bold text-blue-900 mb-2 flex items-center gap-2"><Info size={18} /> 分析總結</h3>
-                    <p className="text-sm text-blue-800">您勾選了 {selectedIssues.size} 個問題。<br/><span className="text-xs text-blue-600 mt-1 block">提示：點擊列表中的「📖 閱讀解方」可開啟該問題的對應簡報。</span></p>
-                  </div>
-                  {['Q1', 'Q2', 'Q3', 'Q4'].map(quad => {
-                    const quadIssues = questionsData.filter(i => selectedIssues.has(i.id) && getQuadrant(i.x, i.y) === quad);
-                    if (quadIssues.length === 0) return null;
-                    return (
-                      <div key={quad} className={`border rounded-xl overflow-hidden shadow-sm ${QUADRANTS[quad].color.replace('bg-', 'bg-opacity-20 ')}`}>
-                        <div className={`px-4 py-2 font-bold text-sm flex justify-between items-center ${QUADRANTS[quad].color}`}>
-                          {QUADRANTS[quad].title} <span className="bg-white bg-opacity-30 px-2 py-0.5 rounded text-xs">{quadIssues.length}</span>
+                            <button onClick={() => setCurrentStep('analysis')} className="flex items-center gap-2 px-4 py-2 border rounded-lg bg-gray-50 hover:bg-white">
+                                <Icon name="RotateCcw" size={16} /> 返回分析
+                            </button>
+                        </header>
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                            <div className="p-4 border-b bg-gray-50 flex items-center gap-4">
+                                <div className="relative flex-1">
+                                    <Icon name="Search" className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                                    <input type="text" placeholder="搜尋..." className="w-full pl-10 pr-4 py-2 border rounded-lg" value={adminSearch} onChange={(e) => setAdminSearch(e.target.value)} />
+                                </div>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead>
+                                        <tr className="bg-gray-100 text-sm font-bold border-b">
+                                            <th className="p-4 w-20">編號</th>
+                                            <th className="p-4 w-64">名稱與備註</th>
+                                            <th className="p-4 w-40">座標 (X/Y)</th>
+                                            <th className="p-4">知識連結</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="text-sm">
+                                        {filteredData.map(item => (
+                                            <tr key={item.id} className="border-b hover:bg-gray-50 transition-colors">
+                                                <td className="p-4 font-mono text-gray-500">{item.id}</td>
+                                                <td className="p-4">
+                                                    <input type="text" className="font-bold border rounded px-2 py-1 w-full mb-1" value={item.label} onChange={(e) => handleUpdateQuestion(item.id, 'label', e.target.value)} />
+                                                    <textarea className="text-xs border rounded px-2 py-1 w-full h-12" value={item.desc} onChange={(e) => handleUpdateQuestion(item.id, 'desc', e.target.value)} />
+                                                </td>
+                                                <td className="p-4">
+                                                    <div className="flex flex-col gap-1">
+                                                        <div className="flex items-center justify-between text-xs"><span>X(難)</span><input type="number" className="w-12 border rounded text-center" value={item.x} onChange={(e) => handleUpdateQuestion(item.id, 'x', e.target.value)} /></div>
+                                                        <div className="flex items-center justify-between text-xs"><span>Y(重)</span><input type="number" className="w-12 border rounded text-center" value={item.y} onChange={(e) => handleUpdateQuestion(item.id, 'y', e.target.value)} /></div>
+                                                    </div>
+                                                </td>
+                                                <td className="p-4">
+                                                    <input type="text" className="w-full border rounded px-2 py-1 text-xs" value={knowledgeBase[item.id] || ''} onChange={(e) => handleUpdateLink(item.id, e.target.value)} />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                        <div className="p-3 bg-white">
-                          <ul className="space-y-3">
-                            {quadIssues.map(item => {
-                              const docLink = knowledgeBase[item.id];
-                              return (
-                                <li key={item.id} className="flex flex-col items-start gap-1 text-sm border-b border-gray-50 last:border-0 pb-3 last:pb-0">
-                                  <div className="flex items-start gap-2 w-full">
-                                     <CheckCircle size={14} className="mt-0.5 flex-shrink-0 opacity-50" />
-                                     <div className="flex-1"><span className="font-bold text-gray-800">{item.label}</span><span className="text-gray-500 block text-xs">({item.desc})</span></div>
-                                  </div>
-                                  {docLink && (
-                                    <a href={docLink} target="_blank" rel="noopener noreferrer" className="ml-6 mt-1 flex items-center gap-1 text-xs text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-full transition-colors w-fit shadow-sm">
-                                      <FileText size={12} /> 📖 閱讀解方簡報 <ExternalLink size={10} />
-                                    </a>
-                                  )}
-                                </li>
-                              );
+                    </div>
+                );
+            }
+
+            // --- 介面渲染：報告匯出 ---
+            if (currentStep === 'report') {
+                const date = new Date().toLocaleDateString('zh-TW');
+                const q1Issues = questionsData.filter(i => selectedIssues.has(i.id) && getQuadrant(i.x, i.y) === 'Q1');
+                const q2Issues = questionsData.filter(i => selectedIssues.has(i.id) && getQuadrant(i.x, i.y) === 'Q2');
+                return (
+                    <div className="max-w-4xl mx-auto min-h-screen bg-gray-50 p-4 print:p-0 print:bg-white">
+                        <div className="no-print mb-6 flex justify-between items-center bg-gray-800 text-white p-4 rounded-lg">
+                            <button onClick={() => setCurrentStep('analysis')} className="flex items-center gap-2"><Icon name="ChevronLeft" /> 返回分析</button>
+                            <button onClick={() => window.print()} className="bg-indigo-600 px-6 py-2 rounded-full font-bold flex items-center gap-2"><Icon name="Printer" /> 列印 / PDF</button>
+                        </div>
+                        <div className="bg-white p-8 border print:border-none shadow-xl mx-auto w-full max-w-[210mm] min-h-[297mm]">
+                            <header className="border-b-2 border-indigo-600 pb-4 mb-6 flex justify-between items-end">
+                                <div><h1 className="text-3xl font-bold">長照困境分析報告</h1><p className="text-gray-500">自我檢測與行動計畫</p></div>
+                                <div className="text-right"><div className="text-sm text-gray-500">日期</div><div className="font-bold text-lg">{date}</div></div>
+                            </header>
+                            <div className="grid grid-cols-2 gap-8 mb-8">
+                                <div className="border rounded-lg aspect-square relative">
+                                    <svg viewBox="0 0 110 110" className="w-full h-full">
+                                        <line x1="5" y1="55" x2="105" y2="55" stroke="#ccc" strokeWidth="0.5" />
+                                        <line x1="55" y1="105" x2="55" y2="5" stroke="#ccc" strokeWidth="0.5" />
+                                        {questionsData.filter(i => selectedIssues.has(i.id)).map(item => (
+                                            <circle key={item.id} cx={item.x} cy={100 - item.y + 5} r="2" fill={QUADRANTS[getQuadrant(item.x, item.y)].dotColor} />
+                                        ))}
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h3 className="font-bold border-b-2 border-red-200 mb-2">🔥 高優先處理清單</h3>
+                                    <ul className="text-sm space-y-1">
+                                        {q1Issues.concat(q2Issues).slice(0, 10).map(i => <li key={i.id}>• {i.label}</li>)}
+                                    </ul>
+                                </div>
+                            </div>
+                            <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Icon name="Edit3" /> 照顧計畫筆記區</h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                {['🏥 醫療與護理', '🏠 生活與安全', '👨‍👩‍👧 家庭與溝通', '☕ 自我調適'].map(title => (
+                                    <div key={title} className="border p-3 min-h-[180px] rounded-lg">
+                                        <div className="font-bold border-b mb-2">{title}</div>
+                                        <div className="ruled-paper h-32"></div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // --- 介面渲染：問卷調查 ---
+            if (currentStep === 'survey') {
+                return (
+                    <div className="max-w-4xl mx-auto p-4">
+                        <header className="mb-8 text-center bg-white p-8 rounded-2xl shadow-sm relative">
+                            <button onClick={() => setCurrentStep('admin')} className="absolute top-4 right-4 text-gray-400 hover:text-indigo-600 flex items-center gap-1 text-xs">
+                                <Icon name="Settings" size={14} /> 後台管理
+                            </button>
+                            <h1 className="text-4xl font-black text-gray-800 mb-2">長照困境診斷雷達</h1>
+                            <p className="text-gray-500">勾選您正面臨的挑戰，獲得視覺化分析與解方簡報</p>
+                        </header>
+                        <div className="space-y-6">
+                            {Object.entries(categories).map(([key, name]) => (
+                                <div key={key} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                                    <div className="bg-blue-50 px-5 py-3 border-b border-blue-100 flex justify-between items-center">
+                                        <h3 className="font-bold text-blue-900">{key}. {name}</h3>
+                                        <button onClick={() => selectAllInCategory(key)} className="text-xs text-blue-600 underline">全選/取消</button>
+                                    </div>
+                                    <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {questionsData.filter(i => i.cat === key).map(i => (
+                                            <label key={i.id} className={`flex items-start p-3 rounded-lg border transition-all cursor-pointer ${selectedIssues.has(i.id) ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-300' : 'bg-white hover:bg-gray-50 border-gray-100'}`}>
+                                                <input type="checkbox" className="mt-1 mr-3 h-5 w-5 rounded text-blue-600" checked={selectedIssues.has(i.id)} onChange={() => toggleIssue(i.id)} />
+                                                <div><div className="font-bold text-gray-900 leading-tight">{i.label}</div><div className="text-[10px] text-gray-400 mt-1">{i.desc}</div></div>
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="sticky bottom-4 bg-white/90 backdrop-blur-sm border-t p-6 mt-8 flex justify-between items-center shadow-2xl rounded-2xl">
+                            <div className="text-gray-700">已選擇 <span className="text-3xl font-black text-blue-600">{selectedIssues.size}</span> 項問題</div>
+                            <button onClick={handleFinishSurvey} className="bg-blue-600 text-white px-10 py-4 rounded-full font-black text-lg flex items-center gap-2 shadow-lg hover:bg-blue-700 transition-all transform hover:scale-105">開始分析 <Icon name="ArrowRight" /></button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // --- 介面渲染：分析主畫面 ---
+            return (
+                <div className="max-w-7xl mx-auto p-4">
+                    <div className="flex justify-between items-center mb-6 bg-white p-5 rounded-2xl shadow-sm">
+                        <h2 className="text-2xl font-black text-gray-800">分析診斷結果</h2>
+                        <div className="flex gap-2">
+                            <button onClick={() => setCurrentStep('report')} className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-xl font-bold hover:bg-indigo-100"><Icon name="FileOutput" size={18} /> 匯出報告</button>
+                            <button onClick={() => setCurrentStep('admin')} className="flex items-center gap-2 px-4 py-2 border rounded-xl hover:bg-gray-100"><Icon name="Settings" size={18} /> 管理後台</button>
+                            <button onClick={() => setCurrentStep('survey')} className="flex items-center gap-2 px-4 py-2 border rounded-xl hover:bg-gray-100"><Icon name="RotateCcw" size={18} /> 重選問題</button>
+                        </div>
+                    </div>
+                    <div className="grid lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2 space-y-4">
+                            <div className="bg-white p-4 rounded-2xl border flex justify-between items-center">
+                                <div className="flex items-center gap-2 font-bold"><Icon name="Filter" className="text-blue-600" /> 顯示設定：</div>
+                                <div className="bg-gray-100 p-1 rounded-xl flex gap-1">
+                                    <button onClick={() => setShowAll(false)} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${!showAll ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}>我的問題 ({selectedIssues.size})</button>
+                                    <button onClick={() => setShowAll(true)} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${showAll ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`}>全部 100 題</button>
+                                </div>
+                            </div>
+                            <div className="bg-white p-8 rounded-3xl shadow-xl border relative aspect-square">
+                                <div className="absolute inset-4 pointer-events-none grid grid-cols-2 grid-rows-2">
+                                    <div className="border-r border-b p-2"><span className="text-xs font-black text-yellow-600 bg-yellow-100 px-2 py-1 rounded">II. 優先改善</span></div>
+                                    <div className="border-b p-2 text-right"><span className="text-xs font-black text-red-600 bg-red-100 px-2 py-1 rounded">I. 危機處理</span></div>
+                                    <div className="border-r p-2 flex items-end"><span className="text-xs font-black text-green-600 bg-green-100 px-2 py-1 rounded">III. 日常維護</span></div>
+                                    <div className="p-2 flex items-end justify-end"><span className="text-xs font-black text-blue-600 bg-blue-100 px-2 py-1 rounded">IV. 長期規劃</span></div>
+                                </div>
+                                <svg viewBox="0 0 110 110" className="w-full h-full relative z-10">
+                                    <line x1="5" y1="55" x2="105" y2="55" stroke="#e2e8f0" strokeWidth="0.5" />
+                                    <line x1="55" y1="105" x2="55" y2="5" stroke="#e2e8f0" strokeWidth="0.5" />
+                                    {questionsData.map(i => {
+                                        const isSelected = selectedIssues.has(i.id);
+                                        if (!isSelected && !showAll) return null;
+                                        const color = isSelected ? QUADRANTS[getQuadrant(i.x, i.y)].dotColor : '#cbd5e1';
+                                        return (
+                                            <g key={i.id} onMouseEnter={() => setHoveredPoint(i.id)} onMouseLeave={() => setHoveredPoint(null)} className="cursor-pointer">
+                                                <circle cx={i.x} cy={100 - i.y + 5} r={isSelected ? 1.8 : 1} fill={color} opacity={isSelected ? 1 : 0.3} stroke="white" strokeWidth="0.2" />
+                                                {isSelected && <text x={i.x} y={100 - i.y + 3} fontSize="2.5" fill={color} fontWeight="bold" textAnchor="middle">{i.label}</text>}
+                                            </g>
+                                        );
+                                    })}
+                                </svg>
+                                {hoveredPoint && (
+                                    <div className="absolute top-4 left-4 bg-gray-900 text-white p-4 rounded-xl shadow-2xl z-50 max-w-xs animate-in fade-in duration-200">
+                                        {(() => {
+                                            const i = questionsData.find(q => q.id === hoveredPoint);
+                                            return <>
+                                                <div className="font-black text-yellow-400 text-lg mb-1">{i.label}</div>
+                                                <p className="text-xs text-gray-300 leading-relaxed">{i.desc}</p>
+                                                <div className="mt-2 pt-2 border-t border-gray-700 text-[10px] text-gray-500">難度: {i.x} | 重要性: {i.y}</div>
+                                            </>;
+                                        })()}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="bg-blue-600 text-white p-6 rounded-3xl shadow-lg">
+                                <h3 className="font-black text-xl mb-2 flex items-center gap-2"><Icon name="Info" /> 分析總結</h3>
+                                <p className="text-sm opacity-90 leading-relaxed">我們偵測到您有 {selectedIssues.size} 個關鍵挑戰。建議優先處理位於 <span className="font-black underline">紅色區域</span> 的核心痛點。</p>
+                            </div>
+                            {['Q1', 'Q2', 'Q3', 'Q4'].map(quad => {
+                                const issues = questionsData.filter(i => selectedIssues.has(i.id) && getQuadrant(i.x, i.y) === quad);
+                                if (issues.length === 0) return null;
+                                return (
+                                    <div key={quad} className={`rounded-3xl border overflow-hidden shadow-sm ${QUADRANTS[quad].color}`}>
+                                        <div className="p-4 font-black text-sm flex justify-between items-center border-b border-black/5">
+                                            {QUADRANTS[quad].title} <span className="bg-white/50 px-3 py-1 rounded-full text-xs">{issues.length}</span>
+                                        </div>
+                                        <div className="p-4 bg-white/50 space-y-3">
+                                            {issues.map(i => (
+                                                <div key={i.id} className="flex flex-col gap-2 pb-3 border-b border-black/5 last:border-0">
+                                                    <div className="flex items-start gap-2">
+                                                        <Icon name="CheckCircle" className="mt-1 flex-shrink-0 text-gray-400" size={14} />
+                                                        <div><div className="font-bold text-gray-800">{i.label}</div><div className="text-[10px] text-gray-500">{i.desc}</div></div>
+                                                    </div>
+                                                    {knowledgeBase[i.id] && (
+                                                        <a href={knowledgeBase[i.id]} target="_blank" className="ml-6 flex items-center gap-2 text-[11px] bg-indigo-600 text-white px-3 py-1.5 rounded-full w-fit hover:bg-indigo-700">
+                                                            <Icon name="FileText" size={12} /> 閱讀知識簡報
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
                             })}
-                          </ul>
                         </div>
-                      </div>
-                    );
-                  })}
+                    </div>
                 </div>
-              </div>
-            </div>
-          );
+            );
         }
 
-        // 4. 啟動程式 (重要！沒有這行畫面會空白)
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<LtcAnalysisApp />);
+        root.render(<App />);
     </script>
 </body>
 </html>
